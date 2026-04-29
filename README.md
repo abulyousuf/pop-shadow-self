@@ -53,7 +53,7 @@ Don't become a shadow.
 
 ## Levels
 
-**Level 1: The Dungeon — 3 minutes**
+**Level 1: The Dungeon — 1.5 minutes**
 
 - One patrolling guard
 - One spike pit
