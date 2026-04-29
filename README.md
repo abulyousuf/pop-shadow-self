@@ -115,7 +115,7 @@ _"The Princess waits no more."_
 3. Open index.html in any browser
 4. Press Enter to begin
 
-🎮 **Play it live:** [GitHub Pages link here]
+🎮 **Play it live:** [https://abulyousuf.github.io/pop-shadow-self/]
 
 ---
 
