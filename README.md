@@ -111,7 +111,7 @@ _"The Princess waits no more."_
 ## How To Run
 
 1. Clone or download this repository
-2. Add music.mp3 to the project folder
+2. Make sure music.mp3 in the project folder
 3. Open index.html in any browser
 4. Press Enter to begin
 
