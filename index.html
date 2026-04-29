@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prince of Persia: Shadow Self</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Georgia', serif;
+            overflow: hidden;
+        }
+        
+        canvas {
+            display: block;
+            border: 1px solid #111;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="450"></canvas>
+    
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Game state
+        let gameState = 'start'; // 'start', 'levelIntro', 'playing', 'levelComplete', 'dead'
+        let stars = [];
+        let torchFlicker = 0;
+        let pressEnterOpacity = 0;
+        let pressEnterDirection = 1;
+        let levelIntroTimer = 0;
+        let audio = null;
+        let overlayTimer = 0;
+        
+        // Audio context for sound effects
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        
+        // Player
+        let player = {
+            x: 100,
+            y: 0,
+            width: 20,
+            height: 40,
+            vx: 0,
+            vy: 0,
+            speed: 3,
+            jumpPower: 12,
+            grounded: false,
+            facingRight: true,
+            health: 3,
+            maxHealth: 3,
+            invincible: false,
+            invincibleTimer: 0,
+            slashing: false,
+            slashTimer: 0
+        };
+        
+        // Guard
+        let guard = {
+            x: 600,
+            y: 0,
+            width: 20,
+            height: 40,
+            speed: 1.5,
+            patrolMin: 400,
+            patrolMax: 750,
+            facingRight: false,
+            alive: true
+        };
+        
+        // Lever and gate
+        let lever = {
+            x: 50,
+            y: 350,
+            pulled: false
+        };
+        
+        let gate = {
+            x: 750,
+            y: 280,
+            width: 40,
+            height: 100,
+            open: false
+        };
+        
+        // Timer
+        let gameTimer = 90; // 90 seconds (1 minute 30 seconds)
+        let timerFrameCount = 0;
+        let timerFlash = false;
+        
+        // Shadow self recording
+        let currentRecording = [];
+        let ghosts = [];
+        
+        // Platforms
+        const platforms = [
+            { x: 0, y: 380, width: 800, height: 70 }, // Bottom floor
+            { x: 150, y: 300, width: 120, height: 20 },
+            { x: 350, y: 240, width: 120, height: 20 },
+            { x: 550, y: 180, width: 120, height: 20 }
+        ];
+        
+        // Spikes
+        const spikes = [
+            { x: 300, y: 380 },
+            { x: 320, y: 380 },
+            { x: 340, y: 380 },
+            { x: 360, y: 380 }
+        ];
+        
+        // Torches
+        const torches = [
+            { x: 100, y: 320 },
+            { x: 300, y: 260 },
+            { x: 500, y: 200 },
+            { x: 700, y: 320 }
+        ];
+        
+        // Keys pressed
+        const keys = {};
+        
+        // Initialize stars
+        function initStars() {
+            stars = [];
+            for (let i = 0; i < 100; i++) {
+                stars.push({
+                    x: Math.random() * canvas.width,
+                    y: Math.random() * canvas.height,
+                    brightness: Math.random(),
+                    twinkleSpeed: 0.01 + Math.random() * 0.02,
+                    twinkleDirection: Math.random() > 0.5 ? 1 : -1
+                });
+            }
+        }
+        
+        // Update stars twinkling
+        function updateStars() {
+            stars.forEach(star => {
+                star.brightness += star.twinkleSpeed * star.twinkleDirection;
+                if (star.brightness >= 1) {
+                    star.brightness = 1;
+                    star.twinkleDirection = -1;
+                } else if (star.brightness <= 0.2) {
+                    star.brightness = 0.2;
+                    star.twinkleDirection = 1;
+                }
+            });
+        }
+        
+        // Draw stars
+        function drawStars() {
+            stars.forEach(star => {
+                ctx.fillStyle = `rgba(255, 255, 255, ${star.brightness})`;
+                ctx.fillRect(star.x, star.y, 1, 1);
+            });
+        }
+        
+        // Draw torch glow
+        function drawTorchGlow() {
+            torchFlicker += 0.05;
+            const flickerIntensity = 0.3 + Math.sin(torchFlicker) * 0.15 + Math.sin(torchFlicker * 1.7) * 0.1;
+            
+            // Left torch
+            const leftGradient = ctx.createRadialGradient(0, canvas.height / 2, 0, 0, canvas.height / 2, 200);
+            leftGradient.addColorStop(0, `rgba(255, 140, 0, ${flickerIntensity})`);
+            leftGradient.addColorStop(0.5, `rgba(255, 100, 0, ${flickerIntensity * 0.3})`);
+            leftGradient.addColorStop(1, 'rgba(255, 100, 0, 0)');
+            ctx.fillStyle = leftGradient;
+            ctx.fillRect(0, 0, 200, canvas.height);
+            
+            // Right torch
+            const rightGradient = ctx.createRadialGradient(canvas.width, canvas.height / 2, 0, canvas.width, canvas.height / 2, 200);
+            rightGradient.addColorStop(0, `rgba(255, 140, 0, ${flickerIntensity})`);
+            rightGradient.addColorStop(0.5, `rgba(255, 100, 0, ${flickerIntensity * 0.3})`);
+            rightGradient.addColorStop(1, 'rgba(255, 100, 0, 0)');
+            ctx.fillStyle = rightGradient;
+            ctx.fillRect(canvas.width - 200, 0, 200, canvas.height);
+        }
+        
+        // Draw start screen
+        function drawStartScreen() {
+            // Clear canvas
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw stars
+            drawStars();
+            
+            // Draw torch glow
+            drawTorchGlow();
+            
+            // Draw "PRINCE OF PERSIA" at top
+            ctx.fillStyle = '#c8a96e';
+            ctx.font = '24px Georgia';
+            ctx.letterSpacing = '8px';
+            ctx.textAlign = 'center';
+            ctx.fillText('P R I N C E   O F   P E R S I A', canvas.width / 2, 80);
+            
+            // Draw "SHADOW SELF" title
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 64px Georgia';
+            ctx.letterSpacing = '2px';
+            ctx.fillText('SHADOW SELF', canvas.width / 2, 180);
+            
+            // Draw thin gold line
+            ctx.strokeStyle = '#c8a96e';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(canvas.width / 2 - 200, 200);
+            ctx.lineTo(canvas.width / 2 + 200, 200);
+            ctx.stroke();
+            
+            // Draw flavor text
+            ctx.fillStyle = 'rgba(255, 191, 0, 0.7)';
+            ctx.font = '18px Georgia';
+            ctx.letterSpacing = '1px';
+            ctx.fillText('"The dungeon remembers every prince who failed."', canvas.width / 2, 260);
+            ctx.fillText('"Your shadow stays behind when you die."', canvas.width / 2, 290);
+            ctx.fillText('"How many ghosts will you leave?"', canvas.width / 2, 320);
+            
+            // Draw blinking "PRESS ENTER TO BEGIN"
+            pressEnterOpacity += 0.02 * pressEnterDirection;
+            if (pressEnterOpacity >= 1) {
+                pressEnterOpacity = 1;
+                pressEnterDirection = -1;
+            } else if (pressEnterOpacity <= 0.3) {
+                pressEnterOpacity = 0.3;
+                pressEnterDirection = 1;
+            }
+            
+            ctx.fillStyle = `rgba(200, 169, 110, ${pressEnterOpacity})`;
+            ctx.font = '22px Georgia';
+            ctx.fillText('PRESS ENTER TO BEGIN', canvas.width / 2, 400);
+        }
+        
+        // Draw level intro screen
+        function drawLevelIntro() {
+            // Black background
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Gold text
+            ctx.fillStyle = '#c8a96e';
+            ctx.font = 'bold 48px Georgia';
+            ctx.textAlign = 'center';
+            ctx.fillText('LEVEL 1: THE DUNGEON', canvas.width / 2, canvas.height / 2);
+        }
+        
+        // Reset level
+        function resetLevel(keepGhosts = false) {
+            player.x = 100;
+            player.y = 0;
+            player.vx = 0;
+            player.vy = 0;
+            player.grounded = false;
+            player.facingRight = true;
+            player.health = 3;
+            player.invincible = false;
+            player.invincibleTimer = 0;
+            player.slashing = false;
+            player.slashTimer = 0;
+            
+            guard.x = 600;
+            guard.y = 0;
+            guard.facingRight = false;
+            guard.alive = true;
+            
+            lever.pulled = false;
+            gate.open = false;
+            
+            gameTimer = 90;
+            timerFrameCount = 0;
+            timerFlash = false;
+            
+            if (!keepGhosts) {
+                currentRecording = [];
+                ghosts = [];
+            } else {
+                currentRecording = [];
+            }
+        }
+        
+        // Play sound effect
+        function playSound(frequency, duration, type = 'sine') {
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            oscillator.frequency.value = frequency;
+            oscillator.type = type;
+            
+            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
+            
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + duration);
+        }
+        
+        // Update game
+        function updateGame() {
+            // Update timer
+            timerFrameCount++;
+            if (timerFrameCount >= 60) {
+                timerFrameCount = 0;
+                gameTimer--;
+                
+                if (gameTimer <= 0) {
+                    gameState = 'timeUp';
+                    overlayTimer = 0;
+                }
+            }
+            
+            // Timer flash when under 30 seconds
+            if (gameTimer < 30) {
+                timerFlash = Math.floor(timerFrameCount / 15) % 2 === 0;
+            }
+            
+            // Record player position
+            currentRecording.push({
+                x: player.x,
+                y: player.y,
+                facingRight: player.facingRight
+            });
+            
+            // Player movement
+            player.vx = 0;
+            if (keys['ArrowLeft']) {
+                player.vx = -player.speed;
+                player.facingRight = false;
+            }
+            if (keys['ArrowRight']) {
+                player.vx = player.speed;
+                player.facingRight = true;
+            }
+            if (keys['ArrowUp'] && player.grounded) {
+                player.vy = -player.jumpPower;
+                player.grounded = false;
+            }
+            
+            // Slash attack
+            if (keys['z'] && !player.slashing) {
+                player.slashing = true;
+                player.slashTimer = 0;
+                playSound(800, 0.1, 'square');
+            }
+            
+            if (player.slashing) {
+                player.slashTimer++;
+                if (player.slashTimer >= 18) { // 0.3 seconds at 60fps
+                    player.slashing = false;
+                }
+                
+                // Check if sword hits guard
+                if (guard.alive) {
+                    const swordReach = 30;
+                    const swordX = player.facingRight ? player.x + player.width : player.x - swordReach;
+                    const swordY = player.y + player.height / 2;
+                    
+                    if (swordX < guard.x + guard.width &&
+                        swordX + swordReach > guard.x &&
+                        swordY > guard.y &&
+                        swordY < guard.y + guard.height) {
+                        guard.alive = false;
+                    }
+                }
+            }
+            
+            // Lever interaction
+            if (keys['ArrowDown'] && player.x < 150 && player.grounded && !lever.pulled) {
+                lever.pulled = true;
+                gate.open = true;
+                playSound(600, 0.3, 'sine');
+            }
+            
+            // Apply gravity
+            player.vy += 0.6;
+            
+            // Update position
+            player.x += player.vx;
+            player.y += player.vy;
+            
+            // Collision with platforms
+            player.grounded = false;
+            platforms.forEach(platform => {
+                if (player.x + player.width > platform.x &&
+                    player.x < platform.x + platform.width &&
+                    player.y + player.height > platform.y &&
+                    player.y + player.height < platform.y + 20 &&
+                    player.vy >= 0) {
+                    player.y = platform.y - player.height;
+                    player.vy = 0;
+                    player.grounded = true;
+                }
+            });
+            
+            // Bounds
+            if (player.x < 0) player.x = 0;
+            if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
+            if (player.y > canvas.height) {
+                player.y = 0;
+            }
+            
+            // Update invincibility
+            if (player.invincible) {
+                player.invincibleTimer++;
+                if (player.invincibleTimer >= 120) { // 2 seconds
+                    player.invincible = false;
+                    player.invincibleTimer = 0;
+                }
+            }
+            
+            // Check spike collision
+            if (!player.invincible && player.grounded) {
+                spikes.forEach(spike => {
+                    // Check if player is horizontally overlapping with spike
+                    if (player.x + player.width > spike.x &&
+                        player.x < spike.x + 20 &&
+                        player.y + player.height >= spike.y - 5 &&
+                        player.y + player.height <= spike.y + 5) {
+                        player.health--;
+                        player.invincible = true;
+                        player.invincibleTimer = 0;
+                        player.x = 100;
+                        player.y = 0;
+                        player.vx = 0;
+                        player.vy = 0;
+                        
+                        if (player.health <= 0) {
+                            ghosts.push([...currentRecording]);
+                            currentRecording = [];
+                            gameState = 'dead';
+                            overlayTimer = 0;
+                        }
+                    }
+                });
+            }
+            
+            // Update guard
+            if (guard.alive) {
+                // Guard gravity
+                guard.y += 0.6;
+                
+                // Guard collision with platforms
+                platforms.forEach(platform => {
+                    if (guard.x + guard.width > platform.x &&
+                        guard.x < platform.x + platform.width &&
+                        guard.y + guard.height > platform.y &&
+                        guard.y + guard.height < platform.y + 20) {
+                        guard.y = platform.y - guard.height;
+                    }
+                });
+                
+                // Guard patrol
+                if (guard.facingRight) {
+                    guard.x += guard.speed;
+                    if (guard.x >= guard.patrolMax) {
+                        guard.facingRight = false;
+                    }
+                } else {
+                    guard.x -= guard.speed;
+                    if (guard.x <= guard.patrolMin) {
+                        guard.facingRight = true;
+                    }
+                }
+                
+                // Guard collision with player
+                if (!player.invincible &&
+                    player.x + player.width > guard.x &&
+                    player.x < guard.x + guard.width &&
+                    player.y + player.height > guard.y &&
+                    player.y < guard.y + guard.height) {
+                    player.health--;
+                    player.invincible = true;
+                    player.invincibleTimer = 0;
+                    
+                    // Knockback
+                    if (player.x < guard.x) {
+                        player.x -= 30;
+                    } else {
+                        player.x += 30;
+                    }
+                    
+                    if (player.health <= 0) {
+                        ghosts.push([...currentRecording]);
+                        currentRecording = [];
+                        gameState = 'dead';
+                        overlayTimer = 0;
+                    }
+                }
+            }
+            
+            // Check gate collision for level complete
+            if (gate.open &&
+                player.x + player.width > gate.x &&
+                player.x < gate.x + gate.width &&
+                player.y + player.height > gate.y &&
+                player.y < gate.y + gate.height) {
+                gameState = 'levelComplete';
+                overlayTimer = 0;
+            }
+            
+            // Update ghosts
+            ghosts.forEach(ghost => {
+                if (!ghost.playhead) ghost.playhead = 0;
+                ghost.playhead++;
+                if (ghost.playhead >= ghost.length) {
+                    ghost.playhead = 0;
+                }
+            });
+        }
+        
+        // Draw game
+        function drawGame() {
+            // Background
+            ctx.fillStyle = '#0a0608';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw torches
+            torchFlicker += 0.05;
+            torches.forEach(torch => {
+                const flickerIntensity = 0.4 + Math.sin(torchFlicker + torch.x) * 0.2;
+                
+                // Torch glow
+                const gradient = ctx.createRadialGradient(torch.x, torch.y, 0, torch.x, torch.y, 60);
+                gradient.addColorStop(0, `rgba(255, 140, 0, ${flickerIntensity})`);
+                gradient.addColorStop(0.5, `rgba(255, 100, 0, ${flickerIntensity * 0.3})`);
+                gradient.addColorStop(1, 'rgba(255, 100, 0, 0)');
+                ctx.fillStyle = gradient;
+                ctx.fillRect(torch.x - 60, torch.y - 60, 120, 120);
+                
+                // Torch flame
+                ctx.fillStyle = `rgba(255, 140, 0, ${flickerIntensity})`;
+                ctx.beginPath();
+                ctx.arc(torch.x, torch.y, 5, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            
+            // Draw platforms
+            platforms.forEach(platform => {
+                // Wall tiles
+                ctx.fillStyle = '#1a0f05';
+                ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
+                
+                // Floor tiles with gold edge
+                ctx.fillStyle = '#3d1f0a';
+                ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
+                ctx.fillStyle = '#8b6914';
+                ctx.fillRect(platform.x, platform.y, platform.width, 3);
+            });
+            
+            // Draw spikes
+            ctx.fillStyle = '#ff0000';
+            spikes.forEach(spike => {
+                ctx.beginPath();
+                ctx.moveTo(spike.x, spike.y);
+                ctx.lineTo(spike.x + 10, spike.y - 20);
+                ctx.lineTo(spike.x + 20, spike.y);
+                ctx.closePath();
+                ctx.fill();
+            });
+            
+            // Draw lever
+            ctx.fillStyle = '#c8a96e';
+            ctx.fillRect(lever.x, lever.y, 10, 30);
+            if (lever.pulled) {
+                ctx.fillRect(lever.x, lever.y + 30, 20, 5);
+            } else {
+                ctx.fillRect(lever.x - 10, lever.y, 20, 5);
+            }
+            
+            // Draw gate
+            if (!gate.open) {
+                ctx.fillStyle = '#c8a96e';
+                for (let i = 0; i < 5; i++) {
+                    ctx.fillRect(gate.x + i * 10, gate.y, 4, gate.height);
+                }
+            } else {
+                // Gate glow effect
+                const gateGradient = ctx.createRadialGradient(gate.x + gate.width / 2, gate.y + gate.height / 2, 0, gate.x + gate.width / 2, gate.y + gate.height / 2, 60);
+                gateGradient.addColorStop(0, 'rgba(200, 169, 110, 0.5)');
+                gateGradient.addColorStop(1, 'rgba(200, 169, 110, 0)');
+                ctx.fillStyle = gateGradient;
+                ctx.fillRect(gate.x - 20, gate.y - 20, gate.width + 40, gate.height + 40);
+            }
+            
+            // Draw ghosts
+            ghosts.forEach(ghost => {
+                if (ghost.playhead < ghost.length) {
+                    const frame = ghost[ghost.playhead];
+                    if (frame) {
+                        ctx.globalAlpha = 0.5;
+                        
+                        // Body
+                        ctx.fillStyle = '#4488ff';
+                        ctx.fillRect(frame.x, frame.y + 10, 20, 20);
+                        
+                        // Head
+                        ctx.fillRect(frame.x + 5, frame.y, 10, 10);
+                        
+                        // Arms
+                        if (frame.facingRight) {
+                            ctx.fillRect(frame.x + 20, frame.y + 15, 8, 4);
+                        } else {
+                            ctx.fillRect(frame.x - 8, frame.y + 15, 8, 4);
+                        }
+                        
+                        // Legs
+                        ctx.fillRect(frame.x + 3, frame.y + 30, 6, 10);
+                        ctx.fillRect(frame.x + 11, frame.y + 30, 6, 10);
+                        
+                        ctx.globalAlpha = 1;
+                    }
+                }
+            });
+            
+            // Draw guard
+            if (guard.alive) {
+                ctx.fillStyle = '#6b1a1a';
+                
+                // Body
+                ctx.fillRect(guard.x, guard.y + 10, guard.width, 20);
+                
+                // Head
+                ctx.fillRect(guard.x + 5, guard.y, 10, 10);
+                
+                // Arms
+                if (guard.facingRight) {
+                    ctx.fillRect(guard.x + guard.width, guard.y + 15, 8, 4);
+                } else {
+                    ctx.fillRect(guard.x - 8, guard.y + 15, 8, 4);
+                }
+                
+                // Legs
+                ctx.fillRect(guard.x + 3, guard.y + 30, 6, 10);
+                ctx.fillRect(guard.x + 11, guard.y + 30, 6, 10);
+            }
+            
+            // Draw player (with flashing when invincible)
+            if (!player.invincible || Math.floor(player.invincibleTimer / 10) % 2 === 0) {
+                // Body
+                ctx.fillStyle = '#c8a96e';
+                ctx.fillRect(player.x, player.y + 10, player.width, 20);
+                
+                // Head
+                ctx.fillStyle = '#e8c484';
+                ctx.fillRect(player.x + 5, player.y, 10, 10);
+                
+                // Arms
+                ctx.fillStyle = '#c8a96e';
+                if (player.facingRight) {
+                    ctx.fillRect(player.x + player.width, player.y + 15, 8, 4);
+                } else {
+                    ctx.fillRect(player.x - 8, player.y + 15, 8, 4);
+                }
+                
+                // Legs
+                ctx.fillRect(player.x + 3, player.y + 30, 6, 10);
+                ctx.fillRect(player.x + 11, player.y + 30, 6, 10);
+            }
+            
+            // Draw sword slash
+            if (player.slashing) {
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                if (player.facingRight) {
+                    ctx.moveTo(player.x + player.width, player.y + player.height / 2);
+                    ctx.lineTo(player.x + player.width + 30, player.y + player.height / 2);
+                } else {
+                    ctx.moveTo(player.x, player.y + player.height / 2);
+                    ctx.lineTo(player.x - 30, player.y + player.height / 2);
+                }
+                ctx.stroke();
+            }
+            
+            // Draw health as hearts
+            // Helper function to draw a heart shape
+            function drawHeart(x, y, size, filled) {
+                ctx.save();
+                ctx.translate(x, y);
+                ctx.scale(size, size);
+                
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                // Left curve
+                ctx.bezierCurveTo(-0.5, -0.5, -1, -0.2, -1, 0.3);
+                ctx.bezierCurveTo(-1, 0.7, -0.5, 1, 0, 1.5);
+                // Right curve
+                ctx.bezierCurveTo(0.5, 1, 1, 0.7, 1, 0.3);
+                ctx.bezierCurveTo(1, -0.2, 0.5, -0.5, 0, 0);
+                ctx.closePath();
+                
+                ctx.fillStyle = filled ? '#cc2222' : '#333333';
+                ctx.fill();
+                
+                ctx.restore();
+            }
+            
+            // Draw filled hearts for current health
+            for (let i = 0; i < player.health; i++) {
+                drawHeart(20 + i * 30, 20, 8, true);
+            }
+            
+            // Draw empty hearts for lost health
+            for (let i = player.health; i < player.maxHealth; i++) {
+                drawHeart(20 + i * 30, 20, 8, false);
+            }
+            
+            // Draw timer
+            const minutes = Math.floor(gameTimer / 60);
+            const seconds = gameTimer % 60;
+            const timerText = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            
+            if (gameTimer < 30 && timerFlash) {
+                ctx.fillStyle = '#ff0000';
+            } else if (gameTimer < 30) {
+                ctx.fillStyle = '#c8a96e';
+            } else {
+                ctx.fillStyle = '#c8a96e';
+            }
+            ctx.font = '24px Georgia';
+            ctx.textAlign = 'center';
+            ctx.fillText(timerText, canvas.width / 2, 30);
+            
+            // Draw shadow count
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '18px Georgia';
+            ctx.textAlign = 'right';
+            ctx.fillText(`SHADOWS: ${ghosts.length}`, canvas.width - 20, 30);
+            
+            // Draw lever hint
+            if (player.x < 150) {
+                ctx.fillStyle = '#c8a96e';
+                ctx.font = '16px Georgia';
+                ctx.textAlign = 'center';
+                ctx.fillText('Press DOWN to pull lever', 200, 380);
+            }
+        }
+        
+        // Handle keyboard input
+        document.addEventListener('keydown', (e) => {
+            keys[e.key] = true;
+            
+            if (e.key === 'Enter' && gameState === 'start') {
+                gameState = 'levelIntro';
+                levelIntroTimer = 0;
+                
+                // Play music
+                audio = new Audio('music.mp3');
+                audio.loop = true;
+                audio.volume = 0.6;
+                audio.play().catch(err => {
+                    console.log('Audio playback failed:', err);
+                });
+            }
+            
+            if (e.key === 'Escape') {
+                gameState = 'start';
+                resetLevel(false);
+                if (audio) {
+                    audio.pause();
+                    audio.currentTime = 0;
+                }
+            }
+        });
+        
+        document.addEventListener('keyup', (e) => {
+            keys[e.key] = false;
+        });
+        
+        // Game loop
+        function gameLoop() {
+            if (gameState === 'start') {
+                updateStars();
+                drawStartScreen();
+            } else if (gameState === 'levelIntro') {
+                drawLevelIntro();
+                levelIntroTimer++;
+                
+                // After 2 seconds (assuming 60fps = 120 frames)
+                if (levelIntroTimer >= 120) {
+                    gameState = 'playing';
+                    resetLevel(false);
+                }
+            } else if (gameState === 'playing') {
+                updateGame();
+                drawGame();
+            } else if (gameState === 'levelComplete') {
+                drawGame();
+                
+                // Dark overlay
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                // Level complete text
+                ctx.fillStyle = '#c8a96e';
+                ctx.font = 'bold 48px Georgia';
+                ctx.textAlign = 'center';
+                ctx.fillText('LEVEL COMPLETE', canvas.width / 2, canvas.height / 2);
+                
+                overlayTimer++;
+                if (overlayTimer >= 180) { // 3 seconds
+                    gameState = 'start';
+                    resetLevel(false);
+                    if (audio) {
+                        audio.pause();
+                        audio.currentTime = 0;
+                    }
+                }
+            } else if (gameState === 'dead') {
+                drawGame();
+                
+                // Dark overlay
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                // You died text
+                ctx.fillStyle = '#ff0000';
+                ctx.font = 'bold 64px Georgia';
+                ctx.textAlign = 'center';
+                ctx.fillText('YOU DIED', canvas.width / 2, canvas.height / 2);
+                
+                overlayTimer++;
+                if (overlayTimer >= 120) { // 2 seconds
+                    gameState = 'playing';
+                    resetLevel(true);
+                }
+            } else if (gameState === 'timeUp') {
+                drawGame();
+                
+                // Dark overlay
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                // Time up text
+                ctx.fillStyle = '#ff0000';
+                ctx.font = 'bold 36px Georgia';
+                ctx.textAlign = 'center';
+                ctx.fillText('THE PRINCESS WAITS NO MORE', canvas.width / 2, canvas.height / 2);
+                
+                overlayTimer++;
+                if (overlayTimer >= 180) { // 3 seconds
+                    gameState = 'start';
+                    resetLevel(false);
+                    if (audio) {
+                        audio.pause();
+                        audio.currentTime = 0;
+                    }
+                }
+            }
+            
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Initialize and start
+        initStars();
+        gameLoop();
+    </script>
+</body>
+</html>
