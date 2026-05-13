@@ -1,6 +1,10 @@
+![Shadow Self gameplay](screenshots/gameplay.png)
+
+**[▶ Play it in your browser](https://abulyousuf.github.io/pop-shadow-self/)**
+
 # Prince of Persia: Shadow Self
 
-> *"The dungeon doesn't reset. It remembers."*
+> _"The dungeon doesn't reset. It remembers."_
 
 A browser-based platformer where every death leaves a ghost behind. The corridors fill with shadows of your failed attempts — each one walking the exact path where you went wrong.
 
@@ -24,13 +28,13 @@ Your failures become the atmosphere. Don't become a shadow.
 
 ## How To Play
 
-| Key | Action |
-|---|---|
-| `←` `→` | Move left and right |
-| `↑` | Jump |
-| `Z` | Slash sword |
+| Key              | Action                  |
+| ---------------- | ----------------------- |
+| `←` `→`          | Move left and right     |
+| `↑`              | Jump                    |
+| `Z`              | Slash sword             |
 | `↓` (near lever) | Pull lever to open gate |
-| `Esc` | Return to title screen |
+| `Esc`            | Return to title screen  |
 
 ## Objective
 
@@ -42,12 +46,14 @@ Your failures become the atmosphere. Don't become a shadow.
 ## Levels
 
 ### Level 1 — The Dungeon (1:30)
+
 - One patrolling guard with reactive chase AI
 - One spike pit to cross
 - Three floating platforms
 - Find the lever, open the gate, escape
 
 ### Level 2 — The Palace (2:00)
+
 - Two guards, faster and more aggressive
 - Two spike pits with deeper drops
 - A climbing staircase of narrow platforms
@@ -97,5 +103,5 @@ Free to fork, modify, and use. A credit back is appreciated but not required.
 
 ---
 
-*"Your shadow stays behind when you die."*
-*"How many ghosts will you leave?"*
+_"Your shadow stays behind when you die."_
+_"How many ghosts will you leave?"_
